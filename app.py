@@ -14,6 +14,7 @@ from flask_wtf import Form
 from forms import *
 from flask_migrate import Migrate
 from dotenv import load_dotenv
+from sqlalchemy import desc
 
 # ----------------------------------------------------------------------------#
 # App Config.
@@ -314,17 +315,7 @@ def delete_venue(venue_id):
 #  ----------------------------------------------------------------
 @app.route('/artists')
 def artists():
-    # TODO: replace with real data returned from querying the database
-    data = [{
-            "id": 4,
-            "name": "Guns N Petals",
-            }, {
-            "id": 5,
-            "name": "Matt Quevedo",
-            }, {
-            "id": 6,
-            "name": "The Wild Sax Band",
-            }]
+    data = Artist.query.order_by(desc('updated_at')).all()
     return render_template('pages/artists.html', artists=data)
 
 
