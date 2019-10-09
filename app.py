@@ -105,7 +105,7 @@ class Address(db.Model):
     house_number = db.Column(db.Integer, nullable=False)
     street = db.Column(db.String(120), nullable=False)
     city_id = db.Column(db.Integer, db.ForeignKey('City.id'), nullable=False)
-    venue = db.relationship('Venue', backref='address', lazy=True)
+    venue = db.relationship('Venue', backref='address', uselist=False, lazy=True)
 
 # TODO Implement Show and Artist models, and complete all model
 # relationships and properties, as a database migration.
@@ -141,30 +141,47 @@ def index():
 
 @app.route('/venues')
 def venues():
-    # TODO: replace with real venues data.
+    # TODO:
     # num_shows should be aggregated based on number of upcoming shows per
     # venue.
-    data = [{
-        "city": "San Francisco",
-        "state": "CA",
-        "venues": [{
-            "id": 1,
-            "name": "The Musical Hop",
-            "num_upcoming_shows": 0,
-        }, {
-            "id": 3,
-            "name": "Park Square Live Music & Coffee",
-            "num_upcoming_shows": 1,
-        }]
-    }, {
-        "city": "New York",
-        "state": "NY",
-        "venues": [{
-            "id": 2,
-            "name": "The Dueling Pianos Bar",
-            "num_upcoming_shows": 0,
-        }]
-    }]
+    try:
+        venues = db.session.query(
+            Venue.name,
+            Venue.id,
+            Address.city_id).join(
+                Address,
+                Address.id == Venue.address_id
+        ).subquery()
+
+        query_result = db.session.query(
+            City.name.label('city'),
+            State.code.label('state'),
+            venues.c.id,
+            venues.c.name
+        ).join(
+            City, State.id == City.state_id
+        ).join(
+            venues, City.id == venues.c.city_id
+        ).all()
+    except:
+        db.session.rollback()
+    finally:
+        db.session.close()
+
+    cities = set()
+    for item in query_result:
+        cities.update([item.city])
+
+    data = []
+
+    for city in cities:
+        tmp = {'city': city, 'venues': []}
+        for item in query_result:
+            if item.city == city:
+                tmp.update({'state': item.state})
+                tmp['venues'].append({'id': item.id, 'name': item.name})
+        data.append(tmp)
+
     return render_template('pages/venues.html', areas=data)
 
 
@@ -316,7 +333,12 @@ def delete_venue(venue_id):
 #  ----------------------------------------------------------------
 @app.route('/artists')
 def artists():
-    data = Artist.query.order_by(desc('updated_at')).all()
+    try:
+        data = Artist.query.order_by(desc('updated_at')).all()
+    except:
+        db.session.rollback()
+    finally:
+        db.session.close()
     return render_template('pages/artists.html', artists=data)
 
 
