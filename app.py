@@ -15,6 +15,7 @@ from forms import *
 from flask_migrate import Migrate
 from dotenv import load_dotenv
 from sqlalchemy import desc
+from datetime import datetime
 
 # ----------------------------------------------------------------------------#
 # App Config.
@@ -33,20 +34,6 @@ migrate = Migrate(app, db)
 # ----------------------------------------------------------------------------#
 
 
-class Base(db.Model):
-    __abstract__ = True
-
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String())
-    phone = db.Column(db.String(120))
-    genres = db.Column(db.ARRAY(db.String(120)))
-    image_link = db.Column(db.String(500))
-    website = db.Column(db.String())
-    facebook_link = db.Column(db.String(120))
-    created_at = db.Column(db.DateTime, default=db.func.now())
-    updated_at = db.Column(db.DateTime, default=db.func.now())
-
-
 show = db.Table(
     'Show',
     db.Column('venue_id', db.Integer, db.ForeignKey('Venue.id'), nullable=False),
@@ -55,6 +42,31 @@ show = db.Table(
     db.Column('id', db.Integer, primary_key=True)
 )
 
+genre_artist = db.Table(
+    'GenreArtist',
+    db.Column('artist_id', db.Integer, db.ForeignKey('Artist.id'), primary_key=True),
+    db.Column('genre_id', db.Integer, db.ForeignKey('Genre.id'), primary_key=True),
+)
+
+genre_venue = db.Table(
+    'GenreVenue',
+    db.Column('venue_id', db.Integer, db.ForeignKey('Venue.id'), primary_key=True),
+    db.Column('genre_id', db.Integer, db.ForeignKey('Genre.id'), primary_key=True),
+)
+
+
+class Base(db.Model):
+    __abstract__ = True
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String())
+    phone = db.Column(db.String(120))
+    image_link = db.Column(db.String(500))
+    website = db.Column(db.String())
+    facebook_link = db.Column(db.String(120))
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    updated_at = db.Column(db.DateTime, default=db.func.now())
+
 
 class Venue(Base):
     __tablename__ = 'Venue'
@@ -62,6 +74,7 @@ class Venue(Base):
     seeking_talent = db.Column(db.Boolean, default=False, nullable=False)
     seeking_description = db.Column(db.String())
     address_id = db.Column(db.Integer, db.ForeignKey('Address.id'), nullable=False)
+    genres = db.relationship('Genre', secondary=genre_venue, lazy=True, backref=db.backref('venues', lazy=True))
 
     # TODO: implement any missing fields, as a database migration using
     # Flask-Migrate
@@ -74,9 +87,15 @@ class Artist(Base):
     seeking_description = db.Column(db.String())
     city_id = db.Column(db.Integer, db.ForeignKey('City.id'), nullable=False)
     venues = db.relationship('Venue', secondary=show, lazy=True, backref=db.backref('artists', lazy=True))
-
+    genres = db.relationship('Genre', secondary=genre_artist, lazy=True, backref=db.backref('artists', lazy=True))
     # TODO: implement any missing fields, as a database migration using
     # Flask-Migrate
+
+
+class Genre(db.Model):
+    __tablename__ = 'Genre'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
 
 
 class State(db.Model):
@@ -367,77 +386,64 @@ def search_artists():
 def show_artist(artist_id):
     # shows the venue page with the given venue_id
     # TODO: replace with real venue data from the venues table, using venue_id
-    data1 = {
-        "id": 4,
-        "name": "Guns N Petals",
-        "genres": ["Rock n Roll"],
-        "city": "San Francisco",
-        "state": "CA",
-        "phone": "326-123-5000",
-        "website": "https://www.gunsnpetalsband.com",
-        "facebook_link": "https://www.facebook.com/GunsNPetals",
-        "seeking_venue": True,
-        "seeking_description": "Looking for shows to perform at in the San Francisco Bay Area!",
-        "image_link": "https://images.unsplash.com/photo-1549213783-8284d0336c4f?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=300&q=80",
-        "past_shows": [{
-            "venue_id": 1,
-            "venue_name": "The Musical Hop",
-            "venue_image_link": "https://images.unsplash.com/photo-1543900694-133f37abaaa5?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=400&q=60",
-            "start_time": "2019-05-21T21:30:00.000Z"
-        }],
-        "upcoming_shows": [],
-        "past_shows_count": 1,
-        "upcoming_shows_count": 0,
+
+    genres_result = db.session.query(
+        Genre.name).join(genre_artist, genre_artist.c.genre_id == Genre.id).filter(
+            genre_artist.c.artist_id == artist_id).all()
+
+    artist_result = db.session.query(
+        Artist,
+        City.name.label('city'),
+        State.code.label('state')).join(
+            City, City.id == Artist.city_id).join(
+                State, State.id == City.state_id).filter(
+                    Artist.id == artist_id).one()
+
+    shows_result = db.session.query(
+        show.c.venue_id.label('venue_id'),
+        Venue.name.label('venue_name'),
+        Venue.image_link.label('venue_image_link'),
+        show.c.start_time.label('start_time')).join(
+            Venue, Venue.id == show.c.venue_id).filter(
+                show.c.artist_id == artist_id).all()
+
+    past_shows = [
+        {
+            'venue_id': show.venue_id,
+            'venue_name': show.venue_name,
+            'venue_image_link': show.venue_image_link,
+            'start_time': str(show.start_time)
+        }
+        for show in shows_result if show.start_time < datetime.now()
+    ]
+    upcoming_shows = [
+        {
+            'venue_id': show.venue_id,
+            'venue_name': show.venue_name,
+            'venue_image_link': show.venue_image_link,
+            'start_time': str(show.start_time)
+        }
+        for show in shows_result if show.start_time > datetime.now()
+    ]
+
+    data = {
+        'id': artist_result.Artist.id,
+        'name': artist_result.Artist.name,
+        'genres': [genre.name for genre in genres_result],
+        'city': artist_result.city,
+        'state': artist_result.state,
+        'phone': artist_result.Artist.phone,
+        'website': artist_result.Artist.website,
+        'facebook_link': artist_result.Artist.facebook_link,
+        'seeking_venue': artist_result.Artist.seeking_venue,
+        'seeking_description': artist_result.Artist.seeking_description,
+        'image_link': artist_result.Artist.image_link,
+        'past_shows': past_shows,
+        'upcoming_shows': upcoming_shows,
+        'past_shows_count': len(past_shows),
+        'upcoming_shows_count': len(upcoming_shows),
     }
-    data2 = {
-        "id": 5,
-        "name": "Matt Quevedo",
-        "genres": ["Jazz"],
-        "city": "New York",
-        "state": "NY",
-        "phone": "300-400-5000",
-        "facebook_link": "https://www.facebook.com/mattquevedo923251523",
-        "seeking_venue": False,
-        "image_link": "https://images.unsplash.com/photo-1495223153807-b916f75de8c5?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=334&q=80",
-        "past_shows": [{
-            "venue_id": 3,
-            "venue_name": "Park Square Live Music & Coffee",
-            "venue_image_link": "https://images.unsplash.com/photo-1485686531765-ba63b07845a7?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=747&q=80",
-            "start_time": "2019-06-15T23:00:00.000Z"
-        }],
-        "upcoming_shows": [],
-        "past_shows_count": 1,
-        "upcoming_shows_count": 0,
-    }
-    data3 = {"id": 6,
-             "name": "The Wild Sax Band",
-             "genres": ["Jazz",
-                        "Classical"],
-             "city": "San Francisco",
-             "state": "CA",
-             "phone": "432-325-5432",
-             "seeking_venue": False,
-             "image_link": "https://images.unsplash.com/photo-1558369981-f9ca78462e61?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=794&q=80",
-             "past_shows": [],
-             "upcoming_shows": [{"venue_id": 3,
-                                 "venue_name": "Park Square Live Music & Coffee",
-                                 "venue_image_link": "https://images.unsplash.com/photo-1485686531765-ba63b07845a7?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=747&q=80",
-                                 "start_time": "2035-04-01T20:00:00.000Z"},
-                                {"venue_id": 3,
-                                 "venue_name": "Park Square Live Music & Coffee",
-                                 "venue_image_link": "https://images.unsplash.com/photo-1485686531765-ba63b07845a7?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=747&q=80",
-                                 "start_time": "2035-04-08T20:00:00.000Z"},
-                                {"venue_id": 3,
-                                 "venue_name": "Park Square Live Music & Coffee",
-                                 "venue_image_link": "https://images.unsplash.com/photo-1485686531765-ba63b07845a7?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=747&q=80",
-                                 "start_time": "2035-04-15T20:00:00.000Z"}],
-             "past_shows_count": 0,
-             "upcoming_shows_count": 3,
-             }
-    data = list(
-        filter(
-            lambda d: d['id'] == artist_id, [
-                data1, data2, data3]))[0]
+
     return render_template('pages/show_artist.html', artist=data)
 
 
@@ -531,17 +537,23 @@ def shows():
     # TODO:
     # num_shows should be aggregated based on number of upcoming shows per
     # venue.
-    query_result = db.session.query(
-        Venue.name.label('venue'),
-        Artist.name.label('artist'),
-        Artist.image_link,
-        show.c.venue_id,
-        show.c.artist_id,
-        show.c.start_time).join(
-            Venue,
-            show.c.venue_id == Venue.id).join(
-                Artist,
-                show.c.artist_id == Artist.id).all()
+    try:
+        query_result = db.session.query(
+            Venue.name.label('venue'),
+            Artist.name.label('artist'),
+            Artist.image_link,
+            show.c.venue_id,
+            show.c.artist_id,
+            show.c.start_time).join(
+                Venue,
+                show.c.venue_id == Venue.id).join(
+                    Artist,
+                    show.c.artist_id == Artist.id).all()
+    except:
+        db.session.rollback()
+    finally:
+        db.session.close()
+
     data = []
     for item in query_result:
         data.append({
