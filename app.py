@@ -95,15 +95,15 @@ class Artist(Base):
 class Genre(db.Model):
     __tablename__ = 'Genre'
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False)
+    name = db.Column(db.String(120), unique=True, nullable=False)
 
 
 class State(db.Model):
     __tablename__ = 'State'
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False)
-    code = db.Column(db.String(2), nullable=False)
+    name = db.Column(db.String(120), unique=True, nullable=False)
+    code = db.Column(db.String(2), unique=True, nullable=False)
     cities = db.relationship('City', backref='state', lazy=True)
 
 
@@ -182,7 +182,7 @@ def venues():
         ).join(
             venues, City.id == venues.c.city_id
         ).all()
-    except:
+    except Exception:
         db.session.rollback()
     finally:
         db.session.close()
@@ -252,7 +252,7 @@ def show_venue(venue_id):
             show.c.start_time.label('start_time')).join(
                 Artist, Artist.id == show.c.artist_id).filter(
                     show.c.venue_id == venue_id).all()
-    except:
+    except Exception:
         db.session.rollback()
     finally:
         db.session.close()
@@ -341,7 +341,7 @@ def artists():
             Artist.id,
             Artist.name).order_by(
                 desc('updated_at')).all()
-    except:
+    except Exception:
         db.session.rollback()
     finally:
         db.session.close()
@@ -393,7 +393,7 @@ def show_artist(artist_id):
             show.c.start_time.label('start_time')).join(
                 Venue, Venue.id == show.c.venue_id).filter(
                     show.c.artist_id == artist_id).all()
-    except:
+    except Exception:
         db.session.rollback()
     finally:
         db.session.close()
@@ -510,12 +510,36 @@ def create_artist_submission():
     # called upon submitting the new artist listing form
     # TODO: insert form data as a new Venue record in the db, instead
     # TODO: modify data to be the data object returned from db insertion
+    try:
+        form = ArtistForm(request.form)
+        state = db.session.query(State.id).filter(State.code == form.state.data).one()
+        city = City.query.filter(City.name == form.city.data, City.state_id == state.id).first()
+        if city is None:
+            city = City(name=form.city.data, state_id=state.id)
+            db.session.add(city)
+            db.session.flush()
 
-    # on successful db insert, flash success
-    flash('Artist ' + request.form['name'] + ' was successfully listed!')
-    # TODO: on unsuccessful db insert, flash an error instead.
-    # e.g., flash('An error occurred. Artist ' + data.name + ' could not be
-    # listed.')
+        artist = Artist(
+            name=form.name.data,
+            facebook_link=form.facebook_link.data,
+            phone=form.phone.data,
+            city_id=city.id)
+        db.session.add(artist)
+        db.session.flush()
+
+        for name in form.genres.data:
+            genre = db.session.query(Genre.id).filter(Genre.name == name).one()
+            add_genre_to_artist = genre_artist.insert().values(artist_id=artist.id, genre_id=genre.id)
+            db.session.execute(add_genre_to_artist)
+
+        db.session.commit()
+        flash('Artist ' + form.name.data + ' was successfully listed!')
+    except Exception as e:
+        db.session.rollback()
+        flash('An error occurred. Artist ' + form.name.data + ' could not be listed.')
+    finally:
+        db.session.close()
+
     return render_template('pages/home.html')
 
 
@@ -540,7 +564,7 @@ def shows():
                 show.c.venue_id == Venue.id).join(
                     Artist,
                     show.c.artist_id == Artist.id).all()
-    except:
+    except Exception:
         db.session.rollback()
     finally:
         db.session.close()
