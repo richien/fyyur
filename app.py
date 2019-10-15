@@ -16,12 +16,14 @@ from flask_migrate import Migrate
 from dotenv import load_dotenv
 from sqlalchemy import desc
 from datetime import datetime
+from flask_wtf.csrf import CSRFProtect
 
 # ----------------------------------------------------------------------------#
 # App Config.
 # ----------------------------------------------------------------------------#
 load_dotenv()
 app = Flask(__name__)
+csrf = CSRFProtect(app)
 moment = Moment(app)
 app.config.from_object('config')
 db = SQLAlchemy(app)
@@ -313,11 +315,56 @@ def create_venue_submission():
     # TODO: modify data to be the data object returned from db insertion
 
     # on successful db insert, flash success
-    flash('Venue ' + request.form['name'] + ' was successfully listed!')
+    try:
+        form = VenueForm(request.form)
+        if form.validate():
+            state = db.session.query(State.id).filter(State.code == form.state.data).one()
+            city = City.query.filter(City.name == form.city.data, City.state_id == state.id).first()
+            if city is None:
+                city = City(name=form.city.data, state_id=state.id)
+                db.session.add(city)
+                db.session.flush()
+
+            addressList = form.address.data.split(' ', 1)
+            house_number = addressList[0]
+            street = addressList[1]
+            address = Address.query.filter(
+                Address.house_number == house_number,
+                Address.street == street).first()
+            if not address:
+                address = Address(house_number=house_number, street=street, city_id=city.id)
+                db.session.add(address)
+                db.session.flush()
+
+            venue = Venue(
+                name=form.name.data,
+                facebook_link=form.facebook_link.data,
+                phone=form.phone.data,
+                address_id=address.id)
+            db.session.add(venue)
+            db.session.flush()
+
+            for name in form.genres.data:
+                genre = db.session.query(Genre.id).filter(Genre.name == name).one()
+                add_genre_to_venue = genre_venue.insert().values(venue_id=venue.id, genre_id=genre.id)
+                db.session.execute(add_genre_to_venue)
+
+            db.session.commit()
+            flash('Venue ' + form.name.data + ' was successfully listed!')
+            return render_template('pages/home.html')
+        for error in form.errors:
+            error_message = str(form.errors[error][0])
+            flash(error.capitalize() + ' - ' + error_message.strip('(\'.,)'), 'error')
+    except Exception:
+        db.session.rollback()
+        flash('An error occurred. Venue ' + form.name.data + ' could not be listed.', 'error')
+    finally:
+        db.session.close()
+
     # TODO: on unsuccessful db insert, flash an error instead.
     # e.g., flash('An error occurred. Venue ' + data.name + ' could not be listed.')
     # see: http://flask.pocoo.org/docs/1.0/patterns/flashing/
-    return render_template('pages/home.html')
+    return render_template('forms/new_venue.html', form=form)
 
 
 @app.route('/venues/<venue_id>', methods=['DELETE'])
@@ -508,39 +555,42 @@ def create_artist_form():
 @app.route('/artists/create', methods=['POST'])
 def create_artist_submission():
     # called upon submitting the new artist listing form
-    # TODO: insert form data as a new Venue record in the db, instead
-    # TODO: modify data to be the data object returned from db insertion
     try:
         form = ArtistForm(request.form)
-        state = db.session.query(State.id).filter(State.code == form.state.data).one()
-        city = City.query.filter(City.name == form.city.data, City.state_id == state.id).first()
-        if city is None:
-            city = City(name=form.city.data, state_id=state.id)
-            db.session.add(city)
+        if form.validate():
+            state = db.session.query(State.id).filter(State.code == form.state.data).one()
+            city = City.query.filter(City.name == form.city.data, City.state_id == state.id).first()
+            if city is None:
+                city = City(name=form.city.data, state_id=state.id)
+                db.session.add(city)
+                db.session.flush()
+
+            artist = Artist(
+                name=form.name.data,
+                facebook_link=form.facebook_link.data,
+                phone=form.phone.data,
+                city_id=city.id)
+            db.session.add(artist)
             db.session.flush()
 
-        artist = Artist(
-            name=form.name.data,
-            facebook_link=form.facebook_link.data,
-            phone=form.phone.data,
-            city_id=city.id)
-        db.session.add(artist)
-        db.session.flush()
+            for name in form.genres.data:
+                genre = db.session.query(Genre.id).filter(Genre.name == name).one()
+                add_genre_to_artist = genre_artist.insert().values(artist_id=artist.id, genre_id=genre.id)
+                db.session.execute(add_genre_to_artist)
 
-        for name in form.genres.data:
-            genre = db.session.query(Genre.id).filter(Genre.name == name).one()
-            add_genre_to_artist = genre_artist.insert().values(artist_id=artist.id, genre_id=genre.id)
-            db.session.execute(add_genre_to_artist)
-
-        db.session.commit()
-        flash('Artist ' + form.name.data + ' was successfully listed!')
-    except Exception as e:
+            db.session.commit()
+            flash('Artist ' + form.name.data + ' was successfully listed!')
+            return render_template('pages/home.html')
+        for error in form.errors:
+            error_message = str(form.errors[error][0])
+            flash(error.capitalize() + ' - ' + error_message.strip('(\'.,)'), 'error')
+    except Exception:
         db.session.rollback()
         flash('An error occurred. Artist ' + form.name.data + ' could not be listed.')
     finally:
         db.session.close()
 
-    return render_template('pages/home.html')
+    return render_template('forms/new_artist.html', form=form)
 
 
 #  Shows

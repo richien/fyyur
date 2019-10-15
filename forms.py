@@ -1,7 +1,30 @@
 from datetime import datetime
 from flask_wtf import Form
-from wtforms import StringField, SelectField, SelectMultipleField, DateTimeField
-from wtforms.validators import DataRequired, AnyOf, URL
+from wtforms import StringField, SelectField, SelectMultipleField, DateTimeField, ValidationError
+from wtforms.validators import DataRequired, AnyOf, URL, Length
+import phonenumbers
+
+
+def validate_phone(form, field):
+    try:
+        input_number = phonenumbers.parse(field.data, 'US')
+        if not phonenumbers.is_possible_number(input_number):
+            raise ValidationError('Invalid phone number.')
+    except Exception as e:
+        raise ValidationError(e.args)
+
+
+def validate_address(form, field):
+    address = field.data.split(' ', 1)
+    try:
+        if len(address) < 2:
+            raise ValidationError('Invalid address supplied. Expected format - House-number Street')
+        try:
+            int(address[0])
+        except ValueError:
+            raise ValidationError('House-number must be a number.')
+    except Exception as e:
+        raise ValidationError(e.args)
 
 
 class ShowForm(Form):
@@ -23,7 +46,7 @@ class VenueForm(Form):
         'name', validators=[DataRequired()]
     )
     city = StringField(
-        'city', validators=[DataRequired()]
+        'city', validators=[DataRequired(), Length(min=3, max=25)]
     )
     state = SelectField(
         'state', validators=[DataRequired()],
@@ -82,10 +105,11 @@ class VenueForm(Form):
         ]
     )
     address = StringField(
-        'address', validators=[DataRequired()]
+        'address', validators=[DataRequired(), validate_address]
     )
     phone = StringField(
-        'phone'
+        'phone',
+        validators=[validate_phone, Length(min=10, max=18)]
     )
     image_link = StringField(
         'image_link'
@@ -125,7 +149,7 @@ class ArtistForm(Form):
         'name', validators=[DataRequired()]
     )
     city = StringField(
-        'city', validators=[DataRequired()]
+        'city', validators=[DataRequired(), Length(min=3, max=25)]
     )
     state = SelectField(
         'state', validators=[DataRequired()],
@@ -185,7 +209,8 @@ class ArtistForm(Form):
     )
     phone = StringField(
         # TODO implement validation logic for state
-        'phone'
+        'phone',
+        validators=[validate_phone, Length(min=10, max=18)]
     )
     image_link = StringField(
         'image_link'
