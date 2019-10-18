@@ -209,3 +209,6 @@ h2.monospace {
 .subtitle {
   opacity: 0.5;
 }
+input.seeking-checkbox {
+  margin-left: 10px;
+}

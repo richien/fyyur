@@ -297,6 +297,8 @@ def show_venue(venue_id):
 @app.route('/venues/create', methods=['GET'])
 def create_venue_form():
     form = VenueForm()
+    form.genres.choices = [(g.name, g.name) for g in Genre.query.order_by('name')]
+    form.state.choices = [(s.code, s.code) for s in State.query.order_by('code')]
     return render_template('forms/new_venue.html', form=form)
 
 
@@ -304,9 +306,11 @@ def create_venue_form():
 def create_venue_submission():
     try:
         form = VenueForm(request.form)
+        form.genres.choices = [(g.name, g.name) for g in Genre.query.order_by('name')]
+        form.state.choices = [(s.code, s.code) for s in State.query.order_by('code')]
         if form.validate():
             state = db.session.query(State.id).filter(State.code == form.state.data).one()
-            city = City.query.filter(City.name == form.city.data, City.state_id == state.id).first()
+            city = City.query.filter(db.func.lower(City.name) == db.func.lower(form.city.data), City.state_id == state.id).first()
             if city is None:
                 city = City(name=form.city.data, state_id=state.id)
                 db.session.add(city)
@@ -317,7 +321,7 @@ def create_venue_submission():
             street = addressList[1]
             address = Address.query.filter(
                 Address.house_number == house_number,
-                Address.street == street).first()
+                db.func.lower(Address.street) == db.func.lower(street)).first()
             if not address:
                 address = Address(house_number=house_number, street=street, city_id=city.id)
                 db.session.add(address)
@@ -326,6 +330,8 @@ def create_venue_submission():
             venue = Venue(
                 name=form.name.data,
                 facebook_link=form.facebook_link.data,
+                image_link=form.image_link.data,
+                website=form.website.data,
                 phone=form.phone.data,
                 address_id=address.id)
             db.session.add(venue)
@@ -342,7 +348,7 @@ def create_venue_submission():
         for error in form.errors:
             error_message = str(form.errors[error][0])
             flash(error.capitalize().replace('_', ' ') + ' - ' + error_message.strip('(\'.,)'), 'error')
-    except Exception:
+    except Exception as e:
         db.session.rollback()
         flash('An error occurred. Venue ' + form.name.data + ' could not be listed.', 'error')
     finally:
@@ -499,30 +505,129 @@ def edit_artist_submission(artist_id):
 
 @app.route('/venues/<int:venue_id>/edit', methods=['GET'])
 def edit_venue(venue_id):
+    try:
+        venue_data = db.session.query(
+            Venue,
+            City.name.label('city'),
+            State.code.label('state'),
+            Address.house_number,
+            Address.street).join(
+                Address,
+                Address.id == Venue.address_id).join(
+                    City,
+                    City.id == Address.city_id).join(
+                        State, State.id == City.state_id).filter(
+                            Venue.id == venue_id).first()
+        venue = {
+            'id': venue_data.Venue.id,
+            'name': venue_data.Venue.name,
+            'genres': venue_data.Venue.genres,
+            'address': str(venue_data.house_number) + ' ' + venue_data.street,
+            'city': venue_data.city,
+            'state': venue_data.state,
+            'phone': venue_data.Venue.phone,
+            'website': venue_data.Venue.website,
+            'facebook_link': venue_data.Venue.facebook_link,
+            'seeking_talent': venue_data.Venue.seeking_talent,
+            'seeking_description': venue_data.Venue.seeking_description,
+            'image_link': venue_data.Venue.image_link
+        }
+    except Exception:
+        db.session.rollback()
+    finally:
+        db.session.close()
+    genres = []
     form = VenueForm()
-    venue = {
-        "id": 1,
-        "name": "The Musical Hop",
-        "genres": ["Jazz", "Reggae", "Swing", "Classical", "Folk"],
-        "address": "1015 Folsom Street",
-        "city": "San Francisco",
-        "state": "CA",
-        "phone": "123-123-1234",
-        "website": "https://www.themusicalhop.com",
-        "facebook_link": "https://www.facebook.com/TheMusicalHop",
-        "seeking_talent": True,
-        "seeking_description": "We are on the lookout for a local artist to play every two weeks. Please call us.",
-        "image_link": "https://images.unsplash.com/photo-1543900694-133f37abaaa5?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=400&q=60"
-    }
-    # TODO: populate form with values from venue with ID <venue_id>
+    form.genres.choices = [
+        (genre.name, genre.name)
+        for genre in Genre.query.order_by('name')
+    ]
+    form.state.choices = [
+        (state.code, state.code)
+        for state in State.query.order_by('code')
+    ]
+    form.name.default = venue['name']
+    form.phone.default = venue['phone']
+    form.address.default = venue['address']
+    for genre in venue['genres']:
+        genres.append(genre.name)
+    form.genres.default = genres
+    form.state.default = venue['state']
+    form.city.default = venue['city']
+    form.facebook_link.default = venue['facebook_link']
+    form.image_link.default = venue['image_link']
+    form.website.default = venue['website']
+    form.seeking_description.default = venue['seeking_description']
+    form.seeking_talent.default = venue['seeking_talent']
+    form.process()
+
     return render_template('forms/edit_venue.html', form=form, venue=venue)
 
 
 @app.route('/venues/<int:venue_id>/edit', methods=['POST'])
 def edit_venue_submission(venue_id):
-    # TODO: take values from the form submitted, and update existing
-    # venue record with ID <venue_id> using the new attributes
-    return redirect(url_for('show_venue', venue_id=venue_id))
+    try:
+        form = VenueForm(request.form)
+        form.genres.choices = [
+            (genre.name, genre.name)
+            for genre in Genre.query.order_by('name')
+        ]
+        form.state.choices = [
+            (state.code, state.code)
+            for state in State.query.order_by('code')
+        ]
+        if form.validate_on_submit():
+            state = db.session.query(State.id).filter(
+                State.code == form.state.data).one()
+            city = City.query.filter(
+                db.func.lower(City.name) == db.func.lower(form.city.data),
+                City.state_id == state.id).first()
+            if city is None:
+                city = City(name=form.city.data, state_id=state.id)
+                db.session.add(city)
+                db.session.flush()
+
+            addressList = form.address.data.split(' ', 1)
+            house_number = addressList[0]
+            street = addressList[1]
+            address = Address.query.filter(
+                Address.house_number == house_number,
+                db.func.lower(Address.street) == db.func.lower(street)).first()
+            if not address:
+                address = Address(
+                    house_number=house_number,
+                    street=street,
+                    city_id=city.id)
+                db.session.add(address)
+                db.session.flush()
+            venue = Venue.query.get(venue_id)
+            venue.name = form.name.data
+            venue.phone = form.phone.data
+            genres = [
+                Genre.query.filter(Genre.name == genre).one()
+                for genre in form.genres.data
+            ]
+            venue.genres = genres
+            venue.image_link = form.image_link.data
+            venue.facebook_link = form.facebook_link.data
+            venue.seeking_talent = form.seeking_talent.data
+            venue.seeking_description = form.seeking_description.data
+            venue.website = form.website.data
+            venue.address = address
+            db.session.add(venue)
+            db.session.commit()
+            flash('Venue ' + form.name.data + ' was successfully updated!')
+            return redirect(url_for('show_venue', venue_id=venue_id))
+        for error in form.errors:
+            error_message = str(form.errors[error][0])
+            flash(
+                error.capitalize().replace('_', ' ') + ' - ' + error_message.strip('(\'.,)'), 'error')
+    except Exception as e:
+        db.session.rollback()
+    finally:
+        db.session.close()
+    flash('An error occurred. Venue ' + form.name.data + ' could not be updated.', 'error')
+    return render_template('forms/edit_venue.html', form=form, venue=dict(request.form))
 
 #  Create Artist
 #  ----------------------------------------------------------------
@@ -531,6 +636,8 @@ def edit_venue_submission(venue_id):
 @app.route('/artists/create', methods=['GET'])
 def create_artist_form():
     form = ArtistForm()
+    form.genres.choices = [(g.name, g.name) for g in Genre.query.order_by('name')]
+    form.state.choices = [(s.code, s.code) for s in State.query.order_by('code')]
     return render_template('forms/new_artist.html', form=form)
 
 
@@ -539,9 +646,13 @@ def create_artist_submission():
     # called upon submitting the new artist listing form
     try:
         form = ArtistForm(request.form)
+        form.genres.choices = [(g.name, g.name) for g in Genre.query.order_by('name')]
+        form.state.choices = [(s.code, s.code) for s in State.query.order_by('code')]
         if form.validate():
             state = db.session.query(State.id).filter(State.code == form.state.data).one()
-            city = City.query.filter(City.name == form.city.data, City.state_id == state.id).first()
+            city = City.query.filter(
+                db.func.lower(City.name) == db.func.lower(form.city.data),
+                City.state_id == state.id).first()
             if city is None:
                 city = City(name=form.city.data, state_id=state.id)
                 db.session.add(city)
@@ -550,6 +661,8 @@ def create_artist_submission():
             artist = Artist(
                 name=form.name.data,
                 facebook_link=form.facebook_link.data,
+                image_link=form.image_link.data,
+                website=form.website.data,
                 phone=form.phone.data,
                 city_id=city.id)
             db.session.add(artist)
@@ -568,7 +681,7 @@ def create_artist_submission():
             flash(error.capitalize().replace('_', ' ') + ' - ' + error_message.strip('(\'.,)'), 'error')
     except Exception:
         db.session.rollback()
-        flash('An error occurred. Artist ' + form.name.data + ' could not be listed.')
+        flash('An error occurred. Artist ' + form.name.data + ' could not be listed.', 'error')
     finally:
         db.session.close()
     return render_template('forms/new_artist.html', form=form)
@@ -625,7 +738,6 @@ def create_shows():
 @app.route('/shows/create', methods=['POST'])
 def create_show_submission():
     # called to create new shows in the db, upon submitting new show listing form
-    # TODO: insert form data as a new Show record in the db, instead
     try:
         form = ShowForm(request.form)
         if form.validate():
