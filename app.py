@@ -219,7 +219,7 @@ def search_venues():
             ''))
 
 
-@app.route('/venues/<int:venue_id>')
+@app.route('/venues/<int:venue_id>', methods=['GET'])
 def show_venue(venue_id):
     # shows the venue page with the given venue_id
     try:
@@ -297,8 +297,8 @@ def show_venue(venue_id):
 @app.route('/venues/create', methods=['GET'])
 def create_venue_form():
     form = VenueForm()
-    form.genres.choices = [(g.name, g.name) for g in Genre.query.order_by('name')]
-    form.state.choices = [(s.code, s.code) for s in State.query.order_by('code')]
+    form.genres.choices = [(genre.name, genre.name) for genre in Genre.query.order_by('name')]
+    form.state.choices = [(state.code, state.code) for state in State.query.order_by('code')]
     return render_template('forms/new_venue.html', form=form)
 
 
@@ -306,8 +306,8 @@ def create_venue_form():
 def create_venue_submission():
     try:
         form = VenueForm(request.form)
-        form.genres.choices = [(g.name, g.name) for g in Genre.query.order_by('name')]
-        form.state.choices = [(s.code, s.code) for s in State.query.order_by('code')]
+        form.genres.choices = [(genre.name, genre.name) for genre in Genre.query.order_by('name')]
+        form.state.choices = [(state.code, state.code) for state in State.query.order_by('code')]
         if form.validate():
             state = db.session.query(State.id).filter(State.code == form.state.data).one()
             city = City.query.filter(db.func.lower(City.name) == db.func.lower(form.city.data), City.state_id == state.id).first()
@@ -477,21 +477,63 @@ def show_artist(artist_id):
 #  ----------------------------------------------------------------
 @app.route('/artists/<int:artist_id>/edit', methods=['GET'])
 def edit_artist(artist_id):
+    try:
+        artist_data = db.session.query(
+            Artist,
+            City.name.label('city'),
+            State.code.label('state')
+        ).join(
+            City,
+            City.id == Artist.city_id
+        ).join(
+            State,
+            State.id == City.state_id
+        ).filter(
+            Artist.id == artist_id
+        ).first()
+        artist = {
+            'id': artist_data.Artist.id,
+            'name': artist_data.Artist.name,
+            'genres': artist_data.Artist.genres,
+            'city': artist_data.city,
+            'state': artist_data.state,
+            'phone': artist_data.Artist.phone,
+            'website': artist_data.Artist.website,
+            'facebook_link': artist_data.Artist.facebook_link,
+            'seeking_venue': artist_data.Artist.seeking_venue,
+            'seeking_description': artist_data.Artist.seeking_description,
+            'image_link': artist_data.Artist.image_link
+        }
+
+    except Exception:
+        db.session.rollback()
+    finally:
+        db.session.close()
+
+        genres = []
     form = ArtistForm()
-    artist = {
-        "id": 4,
-        "name": "Guns N Petals",
-        "genres": ["Rock n Roll"],
-        "city": "San Francisco",
-        "state": "CA",
-        "phone": "326-123-5000",
-        "website": "https://www.gunsnpetalsband.com",
-        "facebook_link": "https://www.facebook.com/GunsNPetals",
-        "seeking_venue": True,
-        "seeking_description": "Looking for shows to perform at in the San Francisco Bay Area!",
-        "image_link": "https://images.unsplash.com/photo-1549213783-8284d0336c4f?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=300&q=80"
-    }
-    # TODO: populate form with fields from artist with ID <artist_id>
+    form.genres.choices = [
+        (genre.name, genre.name)
+        for genre in Genre.query.order_by('name')
+    ]
+    form.state.choices = [
+        (state.code, state.code)
+        for state in State.query.order_by('code')
+    ]
+    form.name.default = artist['name']
+    form.phone.default = artist['phone']
+    for genre in artist['genres']:
+        genres.append(genre.name)
+    form.genres.default = genres
+    form.state.default = artist['state']
+    form.city.default = artist['city']
+    form.facebook_link.default = artist['facebook_link']
+    form.image_link.default = artist['image_link']
+    form.website.default = artist['website']
+    form.seeking_description.default = artist['seeking_description']
+    form.seeking_venue.default = artist['seeking_venue']
+    form.process()
+
     return render_template('forms/edit_artist.html', form=form, artist=artist)
 
 
@@ -499,8 +541,61 @@ def edit_artist(artist_id):
 def edit_artist_submission(artist_id):
     # TODO: take values from the form submitted, and update existing
     # artist record with ID <artist_id> using the new attributes
+    try:
+        form = ArtistForm(request.form)
+        form.genres.choices = [
+            (genre.name, genre.name)
+            for genre in Genre.query.order_by('name')
+        ]
+        form.state.choices = [
+            (state.code, state.code)
+            for state in State.query.order_by('code')
+        ]
+        if form.validate_on_submit():
+            state = db.session.query(
+                State.id
+            ).filter(
+                State.code == form.state.data
+            ).one()
+            city = City.query.filter(
+                db.func.lower(City.name) == db.func.lower(form.city.data),
+                City.state_id == state.id).first()
+            if city is None:
+                city = City(name=form.city.data, state_id=state.id)
+                db.session.add(city)
+                db.session.flush()
 
-    return redirect(url_for('show_artist', artist_id=artist_id))
+            artist = Artist.query.get(artist_id)
+            artist.name = form.name.data
+            artist.phone = form.phone.data
+            artist.city = city
+            genres = [
+                Genre.query.filter(Genre.name == genre).one()
+                for genre in form.genres.data
+            ]
+            artist.genres = genres
+            artist.image_link = form.image_link.data
+            artist.facebook_link = form.facebook_link.data
+            artist.seeking_venue = form.seeking_venue.data
+            artist.seeking_description = form.seeking_description.data
+            artist.website = form.website.data
+            db.session.add(artist)
+            db.session.commit()
+            flash('Artist ' + form.name.data + ' was successfully updated!')
+            return redirect(url_for('show_artist', artist_id=artist_id))
+        for error in form.errors:
+            error_message = str(form.errors[error][0])
+            flash(
+                error.capitalize().replace('_', ' ') + ' - ' + error_message.strip('(\'.,)'), 'error'
+            )
+    except Exception:
+        flash('An error occurred. Artist ' + form.name.data + ' could not be updated.', 'error')
+        db.session.rollback()
+    finally:
+        db.session.close()
+    artist = dict(request.form)
+    artist.update({'id': artist_id})
+    return render_template('forms/edit_artist.html', form=form, artist=artist)
 
 
 @app.route('/venues/<int:venue_id>/edit', methods=['GET'])
@@ -511,13 +606,18 @@ def edit_venue(venue_id):
             City.name.label('city'),
             State.code.label('state'),
             Address.house_number,
-            Address.street).join(
-                Address,
-                Address.id == Venue.address_id).join(
-                    City,
-                    City.id == Address.city_id).join(
-                        State, State.id == City.state_id).filter(
-                            Venue.id == venue_id).first()
+            Address.street
+        ).join(
+            Address,
+            Address.id == Venue.address_id
+        ).join(
+            City,
+            City.id == Address.city_id
+        ).join(
+            State, State.id == City.state_id
+        ).filter(
+            Venue.id == venue_id
+        ).first()
         venue = {
             'id': venue_data.Venue.id,
             'name': venue_data.Venue.name,
@@ -560,7 +660,6 @@ def edit_venue(venue_id):
     form.seeking_description.default = venue['seeking_description']
     form.seeking_talent.default = venue['seeking_talent']
     form.process()
-
     return render_template('forms/edit_venue.html', form=form, venue=venue)
 
 
@@ -621,13 +720,16 @@ def edit_venue_submission(venue_id):
         for error in form.errors:
             error_message = str(form.errors[error][0])
             flash(
-                error.capitalize().replace('_', ' ') + ' - ' + error_message.strip('(\'.,)'), 'error')
+                error.capitalize().replace('_', ' ') + ' - ' + error_message.strip('(\'.,)'), 'error'
+            )
     except Exception as e:
+        flash('An error occurred. Venue ' + form.name.data + ' could not be updated.', 'error')
         db.session.rollback()
     finally:
         db.session.close()
-    flash('An error occurred. Venue ' + form.name.data + ' could not be updated.', 'error')
-    return render_template('forms/edit_venue.html', form=form, venue=dict(request.form))
+    venue = dict(request.form)
+    venue.update({'id': venue_id})
+    return render_template('forms/edit_venue.html', form=form, venue=venue)
 
 #  Create Artist
 #  ----------------------------------------------------------------

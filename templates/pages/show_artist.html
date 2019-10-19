@@ -38,9 +38,12 @@
 			<i class="fas fa-moon"></i> Not currently seeking performance venues
 		</p>
 		{% endif %}
+		<h5>
+			<i class="fas fa-edit"></i><a href="/artists/{{ artist.id }}/edit">Edit Artist's Details</a>
+		</h5>
 	</div>
 	<div class="col-sm-6">
-		<img src="{{ artist.image_link }}" alt="Venue Image" />
+		<img src="{{ artist.image_link }}" alt="Artist Image" />
 	</div>
 </div>
 <section>
