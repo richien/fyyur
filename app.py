@@ -199,24 +199,37 @@ def venues():
 
 @app.route('/venues/search', methods=['POST'])
 def search_venues():
-    # TODO: implement search on artists with partial string search. Ensure it is case-insensitive.
-    # seach for Hop should return "The Musical Hop".
-    # search for "Music" should return "The Musical Hop" and "Park Square Live
-    # Music & Coffee"
-    response = {
-        "count": 1,
-        "data": [{
-            "id": 2,
-            "name": "The Dueling Pianos Bar",
-            "num_upcoming_shows": 0,
-        }]
-    }
+    # search on venues with partial string search.
+    search_term = request.form.get('search_term', '')
+    search_format = '%{}%'.format(search_term)
+    try:
+        venues = Venue.query.filter(
+            db.func.lower(Venue.name).like(search_format.lower())
+        ).all()
+        response = {
+            'count': len(venues),
+            'data': []
+        }
+        for venue in venues:
+            upcoming_shows = db.session.query(
+                db.func.count().label('count')
+            ).filter(
+                show.c.start_time > datetime.now(),
+                show.c.venue_id == venue.id
+            ).all()
+            response['data'].append({
+                'id': venue.id,
+                'name': venue.name,
+                'upcoming_shows': upcoming_shows[0].count
+            })
+    except Exception as e:
+        db.session.rollback()
+    finally:
+        db.session.close()
     return render_template(
         'pages/search_venues.html',
         results=response,
-        search_term=request.form.get(
-            'search_term',
-            ''))
+        search_term=search_term)
 
 
 @app.route('/venues/<int:venue_id>', methods=['GET'])
@@ -423,9 +436,7 @@ def search_artists():
     return render_template(
         'pages/search_artists.html',
         results=response,
-        search_term=request.form.get(
-            'search_term',
-            ''))
+        search_term=search_term)
 
 
 @app.route('/artists/<int:artist_id>')
