@@ -321,9 +321,14 @@ def create_venue_submission():
             street = addressList[1]
             address = Address.query.filter(
                 Address.house_number == house_number,
-                db.func.lower(Address.street) == db.func.lower(street)).first()
+                db.func.lower(Address.street) == db.func.lower(street),
+                Address.city_id == city.id
+            ).first()
             if not address:
-                address = Address(house_number=house_number, street=street, city_id=city.id)
+                address = Address(
+                    house_number=house_number,
+                    street=street,
+                    city_id=city.id)
                 db.session.add(address)
                 db.session.flush()
 
@@ -356,16 +361,18 @@ def create_venue_submission():
     return render_template('forms/new_venue.html', form=form)
 
 
-@app.route('/venues/<venue_id>', methods=['DELETE'])
+@app.route('/venues/<int:venue_id>', methods=['DELETE'])
+@csrf.exempt
 def delete_venue(venue_id):
-    # TODO: Complete this endpoint for taking a venue_id, and using
-    # SQLAlchemy ORM to delete a record. Handle cases where the session commit
-    # could fail.
-
-    # BONUS CHALLENGE: Implement a button to delete a Venue on a Venue Page, have it so that
-    # clicking that button delete it from the db then redirect the user to the
-    # homepage
-    return None
+    try:
+        venue = Venue.query.get(venue_id)
+        db.session.delete(venue)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+    finally:
+        db.session.close()
+    return render_template('pages/home.html')
 
 
 #  Artists
@@ -691,7 +698,9 @@ def edit_venue_submission(venue_id):
             street = addressList[1]
             address = Address.query.filter(
                 Address.house_number == house_number,
-                db.func.lower(Address.street) == db.func.lower(street)).first()
+                db.func.lower(Address.street) == db.func.lower(street),
+                Address.city_id == city.id
+            ).first()
             if not address:
                 address = Address(
                     house_number=house_number,

@@ -9,6 +9,11 @@
 		<p class="subtitle">
 			ID: {{ venue.id }}
 		</p>
+		<div class="delete-btn">
+			<button class="btn btn-danger btn-xs" id="delete_venue" data-id="{{ venue.id }}">Delete
+				Venue&cross;
+			</button>
+		</div>
 		<div class="genres">
 			{% for genre in venue.genres %}
 			<span class="genre">{{ genre }}</span>
@@ -81,5 +86,26 @@
 		{% endfor %}
 	</div>
 </section>
+<script>
+	document.getElementById('delete_venue').addEventListener('click', (event) => {
+		const _id = event.target.dataset['id'];
+		let confirmed = window.confirm('Are you sure you want to delete?')
+		if (confirmed) {
+			fetch(`/venues/${_id}`, {
+				method: 'DELETE'
+			})
+			.then((res) => {
+				if (res.status === 200) {
+					console.log("Successfully deleted.")
+					window.location.replace('/')
+				}
+				console.log("Delete Failed.- ", res)
+			})
+			.catch((error) => {
+				console.log("ERROR ON DELETE - ", error)
+			})
+		}
+	})
+</script>
 
 {% endblock %}
