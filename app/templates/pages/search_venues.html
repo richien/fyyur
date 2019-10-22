@@ -6,23 +6,21 @@
 	{% for venue in results.data %}
 	<li>
 		<div>
-			<div>
 			<a href="/venues/{{ venue.id }}">
 				<i class="fas fa-music"></i>
 				<div class="item">
 					<h5>{{ venue.name }}</h5>
 				</div>
 			</a>
-			</div>
-			<div>
-				{% if venue.upcoming_shows %}
-					<small>{{ venue.upcoming_shows }} upcoming shows</small>
-				{% else %}
-					<small>No upcoming shows</small>
-				{% endif %}
-			</div>
 		</div>
 	</li>
+	<div>
+		{% if venue.upcoming_shows %}
+		<small>{{ venue.upcoming_shows }} upcoming shows</small>
+		{% else %}
+		<small>No upcoming shows</small>
+		{% endif %}
+	</div>
 	{% endfor %}
 </ul>
 {% endblock %}
